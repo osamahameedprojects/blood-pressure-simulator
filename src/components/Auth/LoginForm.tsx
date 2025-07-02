@@ -14,7 +14,7 @@ const LoginForm: React.FC = () => {
     <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh" bgcolor="background.default">
       <Paper elevation={3} sx={{ p: 4, minWidth: 320 }}>
         <Typography variant="h5" fontWeight={600} mb={2} align="center">
-          Welcome, Sara
+          Welcome!
         </Typography>
         <Typography variant="subtitle1" mb={3} align="center" color="text.secondary">
           Blood Pressure Training Simulator

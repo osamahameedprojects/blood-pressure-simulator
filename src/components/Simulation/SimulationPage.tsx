@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Box, Typography } from '@mui/material';
 import SimulatorDisplay from './SimulatorDisplay';
 import PumpButton from './PumpButton';
 import { useNavigate } from 'react-router-dom';
+import { useArduino } from '../../App';
 
 const DEFLATE_INTERVAL = 100; // ms
 const DEFLATE_STEP = 1; // mmHg per tick
@@ -17,10 +18,14 @@ const ARDUINO_WS_URL = `ws://${ARDUINO_WS_IP}:${ARDUINO_WS_PORT}`;
 // ===============================
 
 interface SimulationPageProps {
-  // onSimulationEnd?: () => void; // No longer needed for auto navigation
   size?: 'normal' | 'large';
+  trueSystolic?: number;
+  trueDiastolic?: number;
+  arrhythmic?: boolean;
+  onArrhythmicPump?: () => void;
 }
-const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
+const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPageProps>(
+  ({ size = 'normal', trueSystolic = 120, trueDiastolic = 80, arrhythmic = false, onArrhythmicPump }, ref) => {
   const [mercury, setMercury] = useState(0);
   const [deflating, setDeflating] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -34,6 +39,7 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mercuryRef = useRef(0);
   const pumpingRef = useRef(false); // Track if user is actively pumping
+  const { sendBPUpdate, sendBPEnd } = useArduino();
 
   // Keep mercuryRef in sync with mercury
   useEffect(() => {
@@ -57,13 +63,9 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
             firstPumpRef.current = true;
             // Start sending pressure and overMax every 100ms
             sendIntervalRef.current = setInterval(() => {
-              if (wsRef.current && wsRef.current.readyState === 1) {
-                const pressure = mercuryRef.current;
-                const overMax = pumpingRef.current && pressure >= 200;
-                wsRef.current.send(
-                  JSON.stringify({ event: 'bp_update', pressure, overMax })
-                );
-              }
+              const pressure = mercuryRef.current;
+              const overMax = pumpingRef.current && pressure >= 200;
+              sendBPUpdate(pressure, overMax);
             }, 100);
           }
         }
@@ -93,12 +95,6 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
           if (next <= 0) {
             clearInterval(deflateRef.current!);
             setDeflating(false);
-            // Stop sending pressure
-            if (sendIntervalRef.current) {
-              clearInterval(sendIntervalRef.current);
-              sendIntervalRef.current = null;
-            }
-            pumpingRef.current = false;
             return 0;
           }
           return next;
@@ -110,9 +106,9 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
     };
   }, [deflating]);
 
-  // Pulse sound interval: only runs while mercury is in range (SYSTOLIC to DIASTOLIC)
+  // Pulse sound interval: only runs while mercury is in range (trueSystolic to trueDiastolic)
   useEffect(() => {
-    const inRange = mercury <= SYSTOLIC && mercury >= DIASTOLIC;
+    const inRange = mercury <= trueSystolic && mercury >= trueDiastolic;
     if (inRange && !inRangeRef.current) {
       // Entered range: start pulse interval
       inRangeRef.current = true;
@@ -166,6 +162,9 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
   }, []);
 
   const handlePump = () => {
+    if (arrhythmic && onArrhythmicPump) {
+      onArrhythmicPump();
+    }
     setMercury((prev) => {
       const next = Math.min(prev + 10, 200);
       // Start deflation as soon as we pump above 0 and not already deflating
@@ -176,6 +175,17 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
       return next;
     });
   };
+
+  // Expose a function to stop the BP update interval and send bp_end (to be called on form submit)
+  useImperativeHandle(ref, () => ({
+    stopSimulation: () => {
+      if (sendIntervalRef.current) {
+        clearInterval(sendIntervalRef.current);
+        sendIntervalRef.current = null;
+      }
+      sendBPEnd();
+    }
+  }));
 
   return (
     <Box
@@ -197,6 +207,6 @@ const SimulationPage: React.FC<SimulationPageProps> = ({ size = 'normal' }) => {
       <PumpButton onPump={handlePump} />
     </Box>
   );
-};
+});
 
 export default SimulationPage; 

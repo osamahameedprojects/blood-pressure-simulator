@@ -14,7 +14,7 @@ const NavBar: React.FC = () => {
     <AppBar position="static" color="default" elevation={1} sx={{ mb: 3 }}>
       <Toolbar>
         <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}>
-          BP Training Simulator
+          Blood Pressure Training Simulator
         </Typography>
         <Box>
           {navLinks.map((link) => (

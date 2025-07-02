@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useNavigate } from 'react-router-dom';
@@ -10,23 +10,55 @@ import SimulationPage from '../Simulation/SimulationPage';
 import BPInputForm from '../Input/BPInputForm';
 import FeedbackPanel from '../Input/FeedbackPanel';
 import BadgeAnimation from '../Input/BadgeAnimation';
+import { useArduino } from '../../App';
 
 const scenarios = [
-  { name: 'Healthy Adult', available: true, completed: true },
-  { name: 'Hypertensive', available: true, completed: false },
-  { name: 'Arrhythmic', available: false, completed: false },
+  { name: 'Healthy Adult', key: 'healthy', available: true, completed: true },
+  { name: 'Hypertensive', key: 'hypertensive', available: true, completed: false },
+  { name: 'Arrhythmic', key: 'arrhythmic', available: true, completed: false },
 ];
 
 const TRUE_SYSTOLIC = 120;
 const TRUE_DIASTOLIC = 80;
 
+function randomInRange(min: number, max: number, percent = 0.03) {
+  const base = Math.random() * (max - min) + min;
+  const jitter = base * (Math.random() * percent * 2 - percent);
+  return Math.round(base + jitter);
+}
+
+function getScenarioBP(scenario: string) {
+  if (scenario === 'healthy') {
+    return {
+      systolic: randomInRange(90, 120),
+      diastolic: randomInRange(60, 80),
+    };
+  } else if (scenario === 'hypertensive') {
+    return {
+      systolic: randomInRange(130, 180),
+      diastolic: randomInRange(80, 120),
+    };
+  } else if (scenario === 'arrhythmic') {
+    // Start with a random value, but will jitter on each pump
+    return {
+      systolic: randomInRange(90, 180),
+      diastolic: randomInRange(60, 120),
+    };
+  }
+  return { systolic: 120, diastolic: 80 };
+}
+
 const ScenarioSelection: React.FC = () => {
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [trueBP, setTrueBP] = useState<{systolic: number, diastolic: number} | null>(null);
   const [showStartModal, setShowStartModal] = useState(false);
   const [simulationActive, setSimulationActive] = useState(false);
   const [entered, setEntered] = useState<{s: number, d: number} | null>(null);
   const [showBadge, setShowBadge] = useState(false);
   const navigate = useNavigate();
+  const { sendBPEnd } = useArduino();
+  const simulationRef = useRef<{ stopSimulation: () => void }>(null);
 
   // Navigation lock (simple version)
   React.useEffect(() => {
@@ -40,9 +72,11 @@ const ScenarioSelection: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [simulationActive]);
 
-  const handleSelect = (name: string, available: boolean) => {
+  const handleSelect = (name: string, available: boolean, key: string) => {
     if (!available) return;
     setSelected(name);
+    setSelectedKey(key);
+    setTrueBP(getScenarioBP(key));
     setShowStartModal(true);
   };
 
@@ -52,9 +86,11 @@ const ScenarioSelection: React.FC = () => {
   };
 
   const handleInputSubmit = (s: number, d: number) => {
+    // Stop simulation interval and send bp_end
+    if (simulationRef.current) simulationRef.current.stopSimulation();
     setEntered({ s, d });
-    const sysError = Math.abs(TRUE_SYSTOLIC - s);
-    const diaError = Math.abs(TRUE_DIASTOLIC - d);
+    const sysError = Math.abs((trueBP?.systolic ?? 120) - s);
+    const diaError = Math.abs((trueBP?.diastolic ?? 80) - d);
     if (sysError <= 2 && diaError <= 2) {
       setShowBadge(true);
     } else {
@@ -65,8 +101,17 @@ const ScenarioSelection: React.FC = () => {
       setEntered(null);
       setShowBadge(false);
       setSelected(null);
+      setSelectedKey(null);
+      setTrueBP(null);
       navigate('/dashboard');
     }, 2000);
+  };
+
+  // For arrhythmic, jitter BP on each pump
+  const handleArrhythmicPump = () => {
+    if (selectedKey === 'arrhythmic') {
+      setTrueBP(getScenarioBP('arrhythmic'));
+    }
   };
 
   return (
@@ -89,7 +134,7 @@ const ScenarioSelection: React.FC = () => {
                   available={scenario.available}
                   selected={selected === scenario.name}
                   completed={scenario.completed}
-                  onClick={() => handleSelect(scenario.name, scenario.available)}
+                  onClick={() => handleSelect(scenario.name, scenario.available, scenario.key)}
                 />
               </Box>
             ))}
@@ -124,15 +169,22 @@ const ScenarioSelection: React.FC = () => {
         >
           {/* Left: Simulation (larger) */}
           <Box flex={2} minWidth={420} maxWidth={600} display="flex" justifyContent="center" alignItems="center">
-            <SimulationPage size="large" />
+            <SimulationPage
+              ref={simulationRef}
+              size="large"
+              trueSystolic={trueBP?.systolic}
+              trueDiastolic={trueBP?.diastolic}
+              arrhythmic={selectedKey === 'arrhythmic'}
+              onArrhythmicPump={handleArrhythmicPump}
+            />
           </Box>
           {/* Right: Input form and feedback (smaller) */}
           <Box flex={1} minWidth={260} maxWidth={340} display="flex" flexDirection="column" alignItems="center">
             <BPInputForm onSubmit={handleInputSubmit} />
             {entered && (
               <FeedbackPanel
-                trueSystolic={TRUE_SYSTOLIC}
-                trueDiastolic={TRUE_DIASTOLIC}
+                trueSystolic={trueBP?.systolic ?? 120}
+                trueDiastolic={trueBP?.diastolic ?? 80}
                 enteredSystolic={entered.s}
                 enteredDiastolic={entered.d}
               />
