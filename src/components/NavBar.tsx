@@ -5,7 +5,6 @@ import { Link, useLocation } from 'react-router-dom';
 const navLinks = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Scenarios', to: '/scenarios' },
-  { label: 'Simulation', to: '/simulation' },
 ];
 
 const NavBar: React.FC = () => {

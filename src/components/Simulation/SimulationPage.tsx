@@ -12,7 +12,7 @@ const DIASTOLIC = 80;
 const PULSE_INTERVAL = 800; // ms
 
 // === ARDUINO WEBSOCKET CONFIG ===
-const ARDUINO_WS_IP = '192.168.241.26';
+const ARDUINO_WS_IP = '192.168.0.6';
 const ARDUINO_WS_PORT = 8080;
 const ARDUINO_WS_URL = `ws://${ARDUINO_WS_IP}:${ARDUINO_WS_PORT}`;
 // ===============================
@@ -109,20 +109,25 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
   // Pulse sound interval: only runs while mercury is in range (trueSystolic to trueDiastolic)
   useEffect(() => {
     const inRange = mercury <= trueSystolic && mercury >= trueDiastolic;
+    console.log(`Pulse check: mercury=${mercury}, systolic=${trueSystolic}, diastolic=${trueDiastolic}, inRange=${inRange}`);
     if (inRange && !inRangeRef.current) {
       // Entered range: start pulse interval
       inRangeRef.current = true;
       if (!audioRef.current) {
         audioRef.current = new window.Audio('/pulse.mp3');
+        audioRef.current.volume = 1; // Set volume to 50%
       }
       const playPulse = () => {
         if (audioRef.current) {
           audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(() => {});
+          audioRef.current.play().catch((error) => {
+            console.log('Audio play failed:', error);
+          });
         }
       };
       pulseRef.current = setInterval(playPulse, PULSE_INTERVAL);
       playPulse(); // Play immediately
+      console.log('Pulse sound started');
     } else if (!inRange && inRangeRef.current) {
       // Exited range: stop pulse interval
       inRangeRef.current = false;
@@ -134,6 +139,7 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }
+      console.log('Pulse sound stopped');
     }
     // Cleanup on unmount
     return () => {
@@ -146,7 +152,7 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
         audioRef.current.currentTime = 0;
       }
     };
-  }, [mercury]);
+  }, [mercury, trueSystolic, trueDiastolic]);
 
   useEffect(() => {
     return () => {

@@ -8,7 +8,7 @@ import Dashboard from './components/Dashboard/Dashboard';
 import NavBar from './components/NavBar';
 
 // === ARDUINO WEBSOCKET PROVIDER ===
-const ARDUINO_WS_IP = '192.168.241.26';
+const ARDUINO_WS_IP = '192.168.0.6';
 const ARDUINO_WS_PORT = 8080;
 const ARDUINO_WS_URL = `ws://${ARDUINO_WS_IP}:${ARDUINO_WS_PORT}`;
 
