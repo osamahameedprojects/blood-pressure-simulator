@@ -3,9 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LoginForm from './components/Auth/LoginForm';
 import ScenarioSelection from './components/Scenario/ScenarioSelection';
 import SimulationPage from './components/Simulation/SimulationPage';
-import InputPage from './components/Input/InputPage';
 import Dashboard from './components/Dashboard/Dashboard';
 import NavBar from './components/NavBar';
+import { UserProvider, useUser } from './contexts/UserContext';
 
 // === ARDUINO WEBSOCKET PROVIDER ===
 const ARDUINO_WS_IP = '192.168.0.6';
@@ -56,20 +56,66 @@ const ArduinoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
   );
 };
 
+// Protected Route wrapper
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated } = useUser();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Main App Routes
+const AppRoutes: React.FC = () => {
+  const { isAuthenticated } = useUser();
+  
+  return (
+    <Router>
+      <NavBar />
+      <Routes>
+        <Route 
+          path="/login" 
+          element={isAuthenticated ? <Navigate to="/scenarios" replace /> : <LoginForm />} 
+        />
+        <Route 
+          path="/scenarios" 
+          element={
+            <ProtectedRoute>
+              <ScenarioSelection />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/simulation" 
+          element={
+            <ProtectedRoute>
+              <SimulationPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route path="*" element={<Navigate to={isAuthenticated ? "/scenarios" : "/login"} replace />} />
+      </Routes>
+    </Router>
+  );
+};
+
 function App() {
   return (
-    <ArduinoProvider>
-      <Router>
-        <NavBar />
-        <Routes>
-          <Route path="/login" element={<LoginForm />} />
-          <Route path="/scenarios" element={<ScenarioSelection />} />
-          <Route path="/simulation" element={<SimulationPage />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Router>
-    </ArduinoProvider>
+    <UserProvider>
+      <ArduinoProvider>
+        <AppRoutes />
+      </ArduinoProvider>
+    </UserProvider>
   );
 }
 

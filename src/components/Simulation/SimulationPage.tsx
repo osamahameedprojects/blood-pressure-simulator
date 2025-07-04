@@ -9,7 +9,7 @@ const DEFLATE_INTERVAL = 100; // ms
 const DEFLATE_STEP = 1; // mmHg per tick
 const SYSTOLIC = 120;
 const DIASTOLIC = 80;
-const PULSE_INTERVAL = 800; // ms
+
 
 // === ARDUINO WEBSOCKET CONFIG ===
 const ARDUINO_WS_IP = '192.168.0.6';
@@ -33,8 +33,7 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
   const sendIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const firstPumpRef = useRef(false);
   const deflateRef = useRef<NodeJS.Timeout | null>(null);
-  const pulseRef = useRef<NodeJS.Timeout | null>(null);
-  const inRangeRef = useRef(false);
+  const isPulsePlayingRef = useRef(false);
   const navigate = useNavigate();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mercuryRef = useRef(0);
@@ -106,64 +105,73 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
     };
   }, [deflating]);
 
-  // Pulse sound interval: only runs while mercury is in range (trueSystolic to trueDiastolic)
+  // Pulse sound logic: play when mercury is in the BP range
   useEffect(() => {
     const inRange = mercury <= trueSystolic && mercury >= trueDiastolic;
-    console.log(`Pulse check: mercury=${mercury}, systolic=${trueSystolic}, diastolic=${trueDiastolic}, inRange=${inRange}`);
-    if (inRange && !inRangeRef.current) {
-      // Entered range: start pulse interval
-      inRangeRef.current = true;
+    
+    if (inRange && !isPulsePlayingRef.current) {
+      // Entered range: start playing pulse sound (play once, let it loop naturally)
+      isPulsePlayingRef.current = true;
+      
       if (!audioRef.current) {
-        audioRef.current = new window.Audio('/pulse.mp3');
-        audioRef.current.volume = 1; // Set volume to 50%
-      }
-      const playPulse = () => {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch((error) => {
-            console.log('Audio play failed:', error);
-          });
+        try {
+          audioRef.current = new window.Audio('/pulse.mp3');
+          audioRef.current.volume = 0.5;
+          audioRef.current.loop = true;
+          audioRef.current.preload = 'auto';
+          audioRef.current.load();
+        } catch (error) {
+          audioRef.current = null;
+          return;
         }
-      };
-      pulseRef.current = setInterval(playPulse, PULSE_INTERVAL);
-      playPulse(); // Play immediately
-      console.log('Pulse sound started');
-    } else if (!inRange && inRangeRef.current) {
-      // Exited range: stop pulse interval
-      inRangeRef.current = false;
-      if (pulseRef.current) {
-        clearInterval(pulseRef.current);
-        pulseRef.current = null;
       }
+      
+      // Play the pulse sound (it will loop automatically)
+      try {
+        audioRef.current.currentTime = 0;
+        const playPromise = audioRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              // Audio started successfully
+            })
+            .catch((error) => {
+              isPulsePlayingRef.current = false; // Reset on failure
+            });
+        }
+      } catch (error) {
+        isPulsePlayingRef.current = false;
+      }
+      
+    } else if (!inRange && isPulsePlayingRef.current) {
+      // Exited range: stop pulse sound
+      isPulsePlayingRef.current = false;
+      
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }
-      console.log('Pulse sound stopped');
     }
-    // Cleanup on unmount
-    return () => {
-      if (pulseRef.current) {
-        clearInterval(pulseRef.current);
-        pulseRef.current = null;
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    };
   }, [mercury, trueSystolic, trueDiastolic]);
 
   useEffect(() => {
     return () => {
-      if (deflateRef.current) clearInterval(deflateRef.current);
-      if (pulseRef.current) clearInterval(pulseRef.current);
-      if (sendIntervalRef.current) clearInterval(sendIntervalRef.current);
+      if (deflateRef.current) {
+        clearInterval(deflateRef.current);
+      }
+      if (sendIntervalRef.current) {
+        clearInterval(sendIntervalRef.current);
+      }
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
       }
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      // Reset pulse playing state
+      isPulsePlayingRef.current = false;
     };
   }, []);
 
@@ -195,21 +203,48 @@ const SimulationPage = forwardRef<{ stopSimulation: () => void }, SimulationPage
 
   return (
     <Box
-      p={size === 'large' ? 6 : 4}
+      p={size === 'large' ? 4 : 3}
       display="flex"
       flexDirection="column"
       alignItems="center"
       sx={{
-        transform: size === 'large' ? 'scale(1.5)' : 'none',
+        transform: size === 'large' ? 'scale(1.2)' : 'none',
         transition: 'transform 0.2s',
-        minWidth: size === 'large' ? 560 : 360,
-        minHeight: size === 'large' ? 420 : 280,
+        width: '100%',
+        maxWidth: size === 'large' ? '800px' : '600px',
+        minHeight: 'auto',
+        background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)',
+        borderRadius: '12px',
+        border: '1px solid rgba(0, 255, 255, 0.4)',
+        boxShadow: '0 0 20px rgba(0, 255, 255, 0.15), inset 0 0 20px rgba(0, 255, 255, 0.05)',
+        position: 'relative',
+        margin: '0 auto',
       }}
     >
-      <Typography variant="h4" fontWeight={600} mb={3} align="center">
-        Simulation
+      <Typography 
+        variant="h4" 
+        fontWeight={700} 
+        mb={2} 
+        align="center"
+        sx={{
+          color: '#00ffff',
+          textShadow: '0 0 20px rgba(0, 255, 255, 0.5)',
+          fontFamily: '"Orbitron", "Roboto Mono", monospace',
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          position: 'relative',
+          zIndex: 2,
+          filter: 'drop-shadow(0 0 15px rgba(0, 255, 255, 0.6))',
+          fontSize: { xs: '1.5rem', md: '2rem' },
+        }}
+      >
+BLOOD PRESSURE TRAINING
       </Typography>
-      <SimulatorDisplay value={mercury} />
+      
+      <SimulatorDisplay 
+        value={mercury} 
+        isPulsing={mercury <= trueSystolic && mercury >= trueDiastolic} 
+      />
       <PumpButton onPump={handlePump} />
     </Box>
   );

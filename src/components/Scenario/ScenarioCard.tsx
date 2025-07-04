@@ -1,5 +1,5 @@
 import React from 'react';
-import { Paper, Typography, Box, IconButton } from '@mui/material';
+import { Paper, Typography, Box } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
 import PlayCircleFilledWhiteIcon from '@mui/icons-material/PlayCircleFilledWhite';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
