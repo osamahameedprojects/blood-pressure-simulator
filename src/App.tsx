@@ -12,6 +12,11 @@ const ARDUINO_WS_IP = '192.168.0.6';
 const ARDUINO_WS_PORT = 8080;
 const ARDUINO_WS_URL = `ws://${ARDUINO_WS_IP}:${ARDUINO_WS_PORT}`;
 
+// Only attempt Arduino connection in development
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const shouldConnectToArduino = isDevelopment && isLocalhost;
+
 interface ArduinoContextType {
   sendBPUpdate: (pressure: number, overMax: boolean) => void;
   sendBPEnd: () => void;
@@ -30,22 +35,55 @@ const ArduinoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const ws = new window.WebSocket(ARDUINO_WS_URL);
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    return () => ws.close();
+    // Only attempt connection in development and localhost
+    if (!shouldConnectToArduino) {
+      console.log('Arduino connection skipped - not in development environment');
+      return;
+    }
+
+    try {
+      const ws = new window.WebSocket(ARDUINO_WS_URL);
+      wsRef.current = ws;
+      
+      ws.onopen = () => {
+        console.log('Arduino WebSocket connected');
+        setConnected(true);
+      };
+      
+      ws.onclose = () => {
+        console.log('Arduino WebSocket disconnected');
+        setConnected(false);
+      };
+      
+      ws.onerror = (error) => {
+        console.warn('Arduino WebSocket error (this is normal in production):', error);
+        setConnected(false);
+      };
+      
+      return () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+      };
+    } catch (error) {
+      console.warn('Failed to create Arduino WebSocket connection (this is normal in production):', error);
+      setConnected(false);
+    }
   }, []);
 
   const sendBPUpdate = (pressure: number, overMax: boolean) => {
-    if (wsRef.current && wsRef.current.readyState === 1) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ event: 'bp_update', pressure, overMax }));
+    } else if (shouldConnectToArduino) {
+      console.warn('Arduino not connected - BP update not sent');
     }
   };
+  
   const sendBPEnd = () => {
-    if (wsRef.current && wsRef.current.readyState === 1) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ event: 'bp_end' }));
+    } else if (shouldConnectToArduino) {
+      console.warn('Arduino not connected - BP end not sent');
     }
   };
 
